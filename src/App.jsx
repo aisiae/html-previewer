@@ -42,9 +42,17 @@ function App() {
   const [status, setStatus] = useState('편집 준비됨')
   const [copied, setCopied] = useState(false)
   const [mobilePanel, setMobilePanel] = useState('preview')
+  const [sourceWidth, setSourceWidth] = useState(() => {
+    const savedWidth = Number(window.localStorage.getItem('html-previewer-source-width'))
+    return savedWidth >= 18 && savedWidth <= 70 ? savedWidth : 38
+  })
+  const [isSourceCollapsed, setIsSourceCollapsed] = useState(() => (
+    window.localStorage.getItem('html-previewer-source-collapsed') === 'true'
+  ))
   const iframeRef = useRef(null)
   const fileInputRef = useRef(null)
   const statusTimerRef = useRef(null)
+  const workspaceRef = useRef(null)
 
   const announce = (message) => {
     setStatus(message)
@@ -74,6 +82,11 @@ function App() {
   }
 
   useEffect(() => () => window.clearTimeout(statusTimerRef.current), [])
+
+  useEffect(() => {
+    window.localStorage.setItem('html-previewer-source-width', String(sourceWidth))
+    window.localStorage.setItem('html-previewer-source-collapsed', String(isSourceCollapsed))
+  }, [sourceWidth, isSourceCollapsed])
 
   useEffect(() => {
     const context = document.modelContext
@@ -166,6 +179,45 @@ function App() {
     announce('HTML 파일을 저장했습니다')
   }
 
+  const resizeSourcePanel = (clientX) => {
+    const bounds = workspaceRef.current?.getBoundingClientRect()
+    if (!bounds?.width) return
+    const nextWidth = ((clientX - bounds.left) / bounds.width) * 100
+    setSourceWidth(Math.min(70, Math.max(18, nextWidth)))
+  }
+
+  const startResize = (event) => {
+    event.preventDefault()
+    setIsSourceCollapsed(false)
+    document.body.classList.add('is-resizing')
+
+    const handleMove = (moveEvent) => resizeSourcePanel(moveEvent.clientX)
+    const stopResize = () => {
+      document.body.classList.remove('is-resizing')
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', stopResize)
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', stopResize)
+  }
+
+  const handleResizeKey = (event) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      setIsSourceCollapsed(false)
+      setSourceWidth((width) => Math.min(70, Math.max(18, width + (event.key === 'ArrowLeft' ? -2 : 2))))
+    }
+    if (event.key === 'Home') {
+      event.preventDefault()
+      setSourceWidth(18)
+    }
+    if (event.key === 'End') {
+      event.preventDefault()
+      setSourceWidth(70)
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -193,7 +245,11 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace">
+      <main
+        ref={workspaceRef}
+        className={`workspace ${isSourceCollapsed ? 'code-collapsed' : ''}`}
+        style={{ '--source-width': `${sourceWidth}%` }}
+      >
         <div className="mobile-tabs" role="tablist" aria-label="편집 화면 선택">
           <button className={mobilePanel === 'source' ? 'active' : ''} onClick={() => setMobilePanel('source')}>HTML 코드</button>
           <button className={mobilePanel === 'preview' ? 'active' : ''} onClick={() => setMobilePanel('preview')}>편집 화면</button>
@@ -205,7 +261,10 @@ function App() {
               <span className="eyebrow">SOURCE</span>
               <h1>HTML 코드</h1>
             </div>
-            <button className="button compact" onClick={applySource}>화면에 적용</button>
+            <div className="source-heading-actions">
+              <button className="panel-toggle" onClick={() => setIsSourceCollapsed(true)} title="코드 패널 접기" aria-label="코드 패널 접기">‹</button>
+              <button className="button compact" onClick={applySource}>화면에 적용</button>
+            </div>
           </div>
           <label className="visually-hidden" htmlFor="html-source">HTML 코드 입력</label>
           <textarea
@@ -218,11 +277,31 @@ function App() {
           <p id="source-help" className="panel-help">HTML을 붙여넣은 뒤 화면에 적용하세요. 화면에서 고친 내용도 이곳에 반영됩니다.</p>
         </section>
 
+        <div
+          className="panel-resizer"
+          role="separator"
+          aria-label="코드와 편집 화면 크기 조절"
+          aria-orientation="vertical"
+          aria-valuemin="18"
+          aria-valuemax="70"
+          aria-valuenow={Math.round(sourceWidth)}
+          tabIndex="0"
+          onPointerDown={startResize}
+          onKeyDown={handleResizeKey}
+          onDoubleClick={() => setIsSourceCollapsed(true)}
+          title="드래그해서 크기 조절 · 두 번 클릭해서 코드 접기"
+        ><span /></div>
+
         <section className={`panel preview-panel ${mobilePanel === 'preview' ? 'mobile-active' : ''}`}>
           <div className="panel-heading preview-heading">
-            <div>
+            <div className="preview-title">
+              {isSourceCollapsed && (
+                <button className="panel-toggle reopen" onClick={() => setIsSourceCollapsed(false)} title="코드 패널 열기" aria-label="코드 패널 열기">›</button>
+              )}
+              <div>
               <span className="eyebrow">LIVE EDIT</span>
               <h2>{fileName}</h2>
+              </div>
             </div>
             <div className="status" role="status"><span />{status}</div>
           </div>
