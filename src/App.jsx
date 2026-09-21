@@ -95,6 +95,7 @@ function App() {
   const fileInputRef = useRef(null)
   const statusTimerRef = useRef(null)
   const workspaceRef = useRef(null)
+  const savedSelectionRef = useRef(null)
 
   const announce = (message) => {
     setStatus(message)
@@ -128,8 +129,13 @@ function App() {
     }
     documentNode.designMode = 'on'
     prepareInteractiveContent(documentNode)
+    const rememberSelection = () => {
+      const selection = documentNode.getSelection()
+      if (selection?.rangeCount) savedSelectionRef.current = selection.getRangeAt(0).cloneRange()
+    }
     documentNode.addEventListener('input', syncFromPreview)
     documentNode.addEventListener('blur', syncFromPreview, true)
+    documentNode.addEventListener('selectionchange', rememberSelection)
     setStatus('화면을 클릭해 직접 수정하세요')
   }
 
@@ -184,9 +190,22 @@ function App() {
   const runCommand = (command, value = null) => {
     const documentNode = iframeRef.current?.contentDocument
     if (!documentNode) return
+    const savedRange = savedSelectionRef.current
+    if (savedRange?.startContainer?.ownerDocument === documentNode) {
+      const selection = documentNode.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(savedRange)
+    }
     documentNode.execCommand(command, false, value)
     documentNode.body?.focus()
     syncFromPreview()
+  }
+
+  const applyHighlightColor = (color) => {
+    const documentNode = iframeRef.current?.contentDocument
+    if (!documentNode) return
+    const command = documentNode.queryCommandSupported?.('hiliteColor') ? 'hiliteColor' : 'backColor'
+    runCommand(command, color)
   }
 
   const copyHtml = async () => {
@@ -365,6 +384,25 @@ function App() {
             <button className="bold" title="굵게" onMouseDown={(event) => { event.preventDefault(); runCommand('bold') }}>B</button>
             <button className="italic" title="기울임" onMouseDown={(event) => { event.preventDefault(); runCommand('italic') }}>I</button>
             <button className="underline" title="밑줄" onMouseDown={(event) => { event.preventDefault(); runCommand('underline') }}>U</button>
+            <span className="separator" />
+            <label className="color-control" title="글자색">
+              <span className="color-control-icon text-color-icon" aria-hidden="true">A</span>
+              <input
+                type="color"
+                defaultValue="#ef4444"
+                aria-label="글자색 선택"
+                onChange={(event) => runCommand('foreColor', event.target.value)}
+              />
+            </label>
+            <label className="color-control" title="텍스트 형광펜">
+              <span className="color-control-icon highlight-color-icon" aria-hidden="true">A</span>
+              <input
+                type="color"
+                defaultValue="#fde047"
+                aria-label="텍스트 형광펜 색상 선택"
+                onChange={(event) => applyHighlightColor(event.target.value)}
+              />
+            </label>
             <span className="separator" />
             <button title="왼쪽 정렬" onMouseDown={(event) => { event.preventDefault(); runCommand('justifyLeft') }}>≡</button>
             <button title="가운데 정렬" onMouseDown={(event) => { event.preventDefault(); runCommand('justifyCenter') }}>≣</button>
