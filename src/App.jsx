@@ -24,6 +24,9 @@ const SAMPLE_HTML = `<!doctype html>
 </html>`
 
 const PREVIEW_FALLBACK_STYLE_ID = 'html-previewer-scriptless-fallback'
+const PREVIEW_EDITABLE_ATTR = 'data-html-previewer-editable'
+const PREVIEW_ORIGINAL_CONTENTEDITABLE_ATTR = 'data-html-previewer-original-contenteditable'
+const PREVIEW_HAD_CONTENTEDITABLE_ATTR = 'data-html-previewer-had-contenteditable'
 const PREVIEW_FALLBACK_CSS = `
   .reveal {
     opacity: 1 !important;
@@ -31,6 +34,36 @@ const PREVIEW_FALLBACK_CSS = `
     animation: none !important;
   }
 `
+
+const markPreviewEditable = (element, isEditable) => {
+  if (!element || element.hasAttribute(PREVIEW_EDITABLE_ATTR)) return
+  element.setAttribute(PREVIEW_EDITABLE_ATTR, '')
+  element.setAttribute(PREVIEW_HAD_CONTENTEDITABLE_ATTR, String(element.hasAttribute('contenteditable')))
+  element.setAttribute(PREVIEW_ORIGINAL_CONTENTEDITABLE_ATTR, element.getAttribute('contenteditable') ?? '')
+  element.setAttribute('contenteditable', String(isEditable))
+}
+
+const prepareInteractiveContent = (documentNode) => {
+  documentNode.querySelectorAll('details').forEach((detailsNode) => {
+    Array.from(detailsNode.children).forEach((child) => {
+      markPreviewEditable(child, child.tagName !== 'SUMMARY')
+    })
+  })
+}
+
+const restoreInteractiveContent = (documentNode) => {
+  documentNode.querySelectorAll(`[${PREVIEW_EDITABLE_ATTR}]`).forEach((element) => {
+    const hadContentEditable = element.getAttribute(PREVIEW_HAD_CONTENTEDITABLE_ATTR) === 'true'
+    if (hadContentEditable) {
+      element.setAttribute('contenteditable', element.getAttribute(PREVIEW_ORIGINAL_CONTENTEDITABLE_ATTR) ?? '')
+    } else {
+      element.removeAttribute('contenteditable')
+    }
+    element.removeAttribute(PREVIEW_EDITABLE_ATTR)
+    element.removeAttribute(PREVIEW_HAD_CONTENTEDITABLE_ATTR)
+    element.removeAttribute(PREVIEW_ORIGINAL_CONTENTEDITABLE_ATTR)
+  })
+}
 
 const ICONS = {
   code: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/></svg>',
@@ -74,6 +107,7 @@ function App() {
     if (!documentNode?.documentElement) return source
     const documentClone = documentNode.documentElement.cloneNode(true)
     documentClone.querySelector(`#${PREVIEW_FALLBACK_STYLE_ID}`)?.remove()
+    restoreInteractiveContent(documentClone)
     const doctype = documentNode.doctype ? '<!doctype html>\n' : ''
     return `${doctype}${documentClone.outerHTML}`
   }
@@ -93,6 +127,7 @@ function App() {
       documentNode.head?.append(fallbackStyle)
     }
     documentNode.designMode = 'on'
+    prepareInteractiveContent(documentNode)
     documentNode.addEventListener('input', syncFromPreview)
     documentNode.addEventListener('blur', syncFromPreview, true)
     setStatus('화면을 클릭해 직접 수정하세요')
