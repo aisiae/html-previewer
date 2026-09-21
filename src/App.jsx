@@ -23,6 +23,15 @@ const SAMPLE_HTML = `<!doctype html>
 </body>
 </html>`
 
+const PREVIEW_FALLBACK_STYLE_ID = 'html-previewer-scriptless-fallback'
+const PREVIEW_FALLBACK_CSS = `
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+`
+
 const ICONS = {
   code: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/></svg>',
   upload: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4"/></svg>',
@@ -63,8 +72,10 @@ function App() {
   const serializePreview = () => {
     const documentNode = iframeRef.current?.contentDocument
     if (!documentNode?.documentElement) return source
+    const documentClone = documentNode.documentElement.cloneNode(true)
+    documentClone.querySelector(`#${PREVIEW_FALLBACK_STYLE_ID}`)?.remove()
     const doctype = documentNode.doctype ? '<!doctype html>\n' : ''
-    return `${doctype}${documentNode.documentElement.outerHTML}`
+    return `${doctype}${documentClone.outerHTML}`
   }
 
   const syncFromPreview = () => {
@@ -75,6 +86,12 @@ function App() {
   const handleFrameLoad = () => {
     const documentNode = iframeRef.current?.contentDocument
     if (!documentNode) return
+    if (!documentNode.getElementById(PREVIEW_FALLBACK_STYLE_ID)) {
+      const fallbackStyle = documentNode.createElement('style')
+      fallbackStyle.id = PREVIEW_FALLBACK_STYLE_ID
+      fallbackStyle.textContent = PREVIEW_FALLBACK_CSS
+      documentNode.head?.append(fallbackStyle)
+    }
     documentNode.designMode = 'on'
     documentNode.addEventListener('input', syncFromPreview)
     documentNode.addEventListener('blur', syncFromPreview, true)
