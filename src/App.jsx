@@ -119,6 +119,7 @@ function App() {
   }
 
   const handleFrameLoad = () => {
+    savedSelectionRef.current = null
     const documentNode = iframeRef.current?.contentDocument
     if (!documentNode) return
     if (!documentNode.getElementById(PREVIEW_FALLBACK_STYLE_ID)) {
@@ -206,6 +207,45 @@ function App() {
     if (!documentNode) return
     const command = documentNode.queryCommandSupported?.('hiliteColor') ? 'hiliteColor' : 'backColor'
     runCommand(command, color)
+  }
+
+  const applyTextColor = (color) => {
+    const documentNode = iframeRef.current?.contentDocument
+    const range = savedSelectionRef.current
+    if (!documentNode || !range || range.collapsed ||
+      range.startContainer.ownerDocument !== documentNode ||
+      !range.startContainer.isConnected || !range.endContainer.isConnected) return
+
+    // Color each selected text run directly: imported HTML can have its own
+    // important colors on headings, links, and nested emphasis elements.
+    const fragment = range.cloneContents()
+    const walker = documentNode.createTreeWalker(fragment, 4)
+    const textNodes = []
+    while (walker.nextNode()) textNodes.push(walker.currentNode)
+    textNodes.forEach((textNode) => {
+      const span = documentNode.createElement('span')
+      span.setAttribute('data-html-previewer-color-selection', '')
+      span.style.setProperty('color', color, 'important')
+      span.style.setProperty('-webkit-text-fill-color', color, 'important')
+      textNode.replaceWith(span)
+      span.append(textNode)
+    })
+    const container = documentNode.createElement('div')
+    container.append(fragment)
+    // Use an editing command so the toolbar's undo/redo keeps working.
+    runCommand('insertHTML', container.innerHTML)
+    const coloredSpans = documentNode.querySelectorAll('[data-html-previewer-color-selection]')
+    const selection = documentNode.getSelection()
+    if (coloredSpans.length && selection) {
+      const coloredRange = documentNode.createRange()
+      coloredRange.setStart(coloredSpans[0], 0)
+      coloredRange.setEnd(coloredSpans[coloredSpans.length - 1], coloredSpans[coloredSpans.length - 1].childNodes.length)
+      selection.removeAllRanges()
+      selection.addRange(coloredRange)
+    }
+    coloredSpans.forEach((span) => span.removeAttribute('data-html-previewer-color-selection'))
+    if (selection?.rangeCount) savedSelectionRef.current = selection.getRangeAt(0).cloneRange()
+    syncFromPreview()
   }
 
   const copyHtml = async () => {
@@ -391,7 +431,7 @@ function App() {
                 type="color"
                 defaultValue="#ef4444"
                 aria-label="글자색 선택"
-                onChange={(event) => runCommand('foreColor', event.target.value)}
+                onChange={(event) => applyTextColor(event.target.value)}
               />
             </label>
             <label className="color-control" title="텍스트 형광펜">
